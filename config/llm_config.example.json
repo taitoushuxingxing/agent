@@ -1,0 +1,21 @@
+{
+  "enabled": false,
+  "quick": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "base_url": "https://api.openai.com/v1",
+    "api_key_env": "OPENAI_API_KEY",
+    "temperature": 0.2,
+    "max_tokens": 4000,
+    "timeout_seconds": 60
+  },
+  "deep": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "base_url": "https://api.openai.com/v1",
+    "api_key_env": "OPENAI_API_KEY",
+    "temperature": 0.1,
+    "max_tokens": 6000,
+    "timeout_seconds": 90
+  }
+}

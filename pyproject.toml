@@ -1,0 +1,22 @@
+[project]
+name = "vehicle-fault-diagnosis-agent"
+version = "0.1.0"
+description = "Independent backend agent for vehicle fault diagnosis."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "langchain-core",
+    "langgraph",
+    "pymongo",
+    "redis",
+    "python-dotenv",
+    "httpx",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["app*", "vehicleagents*"]
