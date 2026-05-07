@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..utils.agent_utils import append_trace
+
 
 def create_safety_analyst(llm=None):
     def safety_analyst_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -14,7 +16,8 @@ def create_safety_analyst(llm=None):
         safety["safety_history"] = response
         safety["latest_speaker"] = "Safety Analyst"
         safety["count"] = safety.get("count", 0) + 1
-        return {"safety_review_state": safety}
+        updates = append_trace(state, "Safety Analyst", "completed", level)
+        updates["safety_review_state"] = safety
+        return updates
 
     return safety_analyst_node
-

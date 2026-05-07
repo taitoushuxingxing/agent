@@ -70,6 +70,7 @@ def _task_to_document(task: DiagnosisTask) -> dict[str, Any]:
         "current_step": task.current_step,
         "queue_position": task.queue_position,
         "result": task.result,
+        "state": _json_safe(task.state),
         "outcome": task.outcome,
         "error_message": task.error_message,
         "created_at": task.created_at,
@@ -88,6 +89,7 @@ def _document_to_task(document: dict[str, Any]) -> DiagnosisTask:
         current_step=document.get("current_step", "submitted"),
         queue_position=document.get("queue_position"),
         result=document.get("result"),
+        state=document.get("state"),
         outcome=document.get("outcome"),
         error_message=document.get("error_message"),
         created_at=document.get("created_at"),
@@ -95,3 +97,27 @@ def _document_to_task(document: dict[str, Any]) -> DiagnosisTask:
         started_at=document.get("started_at"),
         completed_at=document.get("completed_at"),
     )
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if hasattr(value, "type") and hasattr(value, "content"):
+        data = {"type": getattr(value, "type", value.__class__.__name__), "content": value.content}
+        tool_calls = getattr(value, "tool_calls", None)
+        if tool_calls:
+            data["tool_calls"] = _json_safe(tool_calls)
+        tool_call_id = getattr(value, "tool_call_id", None)
+        if tool_call_id:
+            data["tool_call_id"] = tool_call_id
+        message_id = getattr(value, "id", None)
+        if message_id:
+            data["id"] = message_id
+        return data
+    return str(value)

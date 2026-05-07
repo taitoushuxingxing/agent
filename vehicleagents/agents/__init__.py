@@ -11,11 +11,12 @@ from .planner.diagnostic_planner import create_diagnostic_planner
 from .advisor.repair_advisor import create_repair_advisor
 from .safety.safety_analyst import create_safety_analyst
 from .safety.safety_judge import create_safety_judge
-from .utils.agent_utils import VehicleToolkit, create_msg_delete
+from .utils.agent_utils import VehicleToolkit, create_msg_delete, create_vehicle_tool_node
 
 __all__ = [
     "VehicleToolkit",
     "create_msg_delete",
+    "create_vehicle_tool_node",
     "create_vin_context_analyst",
     "create_symptom_analyst",
     "create_diagnostic_code_analyst",
@@ -28,4 +29,3 @@ __all__ = [
     "create_safety_analyst",
     "create_safety_judge",
 ]
-

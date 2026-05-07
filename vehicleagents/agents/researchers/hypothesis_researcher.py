@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..utils.agent_utils import append_trace
+
 
 def create_hypothesis_researcher(llm=None, memory=None):
     def hypothesis_researcher_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -21,7 +23,8 @@ def create_hypothesis_researcher(llm=None, memory=None):
         debate["history"] = (debate.get("history") or "") + "\nHypothesis Researcher:\n" + response
         debate["current_response"] = "Hypothesis Researcher"
         debate["count"] = debate.get("count", 0) + 1
-        return {"diagnostic_debate_state": debate}
+        updates = append_trace(state, "Hypothesis Researcher", "completed")
+        updates["diagnostic_debate_state"] = debate
+        return updates
 
     return hypothesis_researcher_node
-

@@ -40,6 +40,8 @@ class AppSettings:
     rate_limit_window_seconds: int
     rate_limit_max_requests: int
     llm_config_path: Path
+    graph_cache_max_size: int
+    graph_cache_ttl_seconds: int
 
 
 def _split_csv(value: str) -> list[str]:
@@ -75,4 +77,6 @@ def get_settings() -> AppSettings:
         rate_limit_window_seconds=int(os.getenv("VEHICLE_DIAGNOSIS_RATE_LIMIT_WINDOW_SECONDS", "60")),
         rate_limit_max_requests=int(os.getenv("VEHICLE_DIAGNOSIS_RATE_LIMIT_MAX_REQUESTS", "120")),
         llm_config_path=llm_config_path,
+        graph_cache_max_size=int(os.getenv("VEHICLE_DIAGNOSIS_GRAPH_CACHE_MAX_SIZE", "8")),
+        graph_cache_ttl_seconds=int(os.getenv("VEHICLE_DIAGNOSIS_GRAPH_CACHE_TTL_SECONDS", "1800")),
     )

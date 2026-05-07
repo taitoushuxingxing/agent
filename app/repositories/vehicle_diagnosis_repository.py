@@ -49,6 +49,7 @@ class VehicleDiagnosisRepository:
                     current_step TEXT NOT NULL,
                     queue_position INTEGER,
                     result_json TEXT,
+                    state_json TEXT,
                     outcome_json TEXT,
                     error_message TEXT,
                     created_at TEXT NOT NULL,
@@ -71,6 +72,7 @@ class VehicleDiagnosisRepository:
                 """
             )
             self._ensure_column(connection, "vehicle_diagnosis_tasks", "queue_position", "INTEGER")
+            self._ensure_column(connection, "vehicle_diagnosis_tasks", "state_json", "TEXT")
 
     def _ensure_column(self, connection: sqlite3.Connection, table: str, column: str, column_type: str) -> None:
         columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
@@ -84,12 +86,12 @@ class VehicleDiagnosisRepository:
                 """
                 INSERT INTO vehicle_diagnosis_tasks (
                     task_id, request_json, status, progress, current_step, queue_position,
-                    result_json, outcome_json, error_message,
+                    result_json, state_json, outcome_json, error_message,
                     created_at, updated_at, started_at, completed_at
                 )
                 VALUES (
                     :task_id, :request_json, :status, :progress, :current_step, :queue_position,
-                    :result_json, :outcome_json, :error_message,
+                    :result_json, :state_json, :outcome_json, :error_message,
                     :created_at, :updated_at, :started_at, :completed_at
                 )
                 """,
@@ -108,6 +110,7 @@ class VehicleDiagnosisRepository:
                     current_step = :current_step,
                     queue_position = :queue_position,
                     result_json = :result_json,
+                    state_json = :state_json,
                     outcome_json = :outcome_json,
                     error_message = :error_message,
                     created_at = :created_at,
@@ -158,6 +161,7 @@ class VehicleDiagnosisRepository:
             "current_step": task.current_step,
             "queue_position": task.queue_position,
             "result_json": _dumps(task.result) if task.result is not None else None,
+            "state_json": _dumps(_json_safe(task.state)) if task.state is not None else None,
             "outcome_json": _dumps(task.outcome) if task.outcome is not None else None,
             "error_message": task.error_message,
             "created_at": task.created_at,
@@ -175,6 +179,7 @@ class VehicleDiagnosisRepository:
             current_step=row["current_step"],
             queue_position=_row_value(row, "queue_position"),
             result=_loads(row["result_json"], None),
+            state=_loads(_row_value(row, "state_json"), None),
             outcome=_loads(row["outcome_json"], None),
             error_message=row["error_message"],
             created_at=row["created_at"],
@@ -192,6 +197,30 @@ def _loads(value: str | None, default: Any) -> Any:
     if value is None:
         return default
     return json.loads(value)
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if hasattr(value, "type") and hasattr(value, "content"):
+        data = {"type": getattr(value, "type", value.__class__.__name__), "content": value.content}
+        tool_calls = getattr(value, "tool_calls", None)
+        if tool_calls:
+            data["tool_calls"] = _json_safe(tool_calls)
+        tool_call_id = getattr(value, "tool_call_id", None)
+        if tool_call_id:
+            data["tool_call_id"] = tool_call_id
+        message_id = getattr(value, "id", None)
+        if message_id:
+            data["id"] = message_id
+        return data
+    return str(value)
 
 
 def _row_value(row: sqlite3.Row, key: str) -> Any:

@@ -39,7 +39,7 @@ class VehicleDiagnosisGraph:
         self.deep_llm = deep_llm
         self.memory = memory or VehicleDiagnosisMemory()
         self.conditional_logic = VehicleConditionalLogic(
-            max_tool_calls=self.config.get("max_tool_calls", 2),
+            max_tool_calls=self.config.get("analyst_max_tool_calls", self.config.get("max_tool_calls", 2)),
             max_debate_rounds=self.config.get("max_debate_rounds", 1),
             max_safety_discuss_rounds=self.config.get("max_safety_discuss_rounds", 1),
         )
@@ -52,10 +52,20 @@ class VehicleDiagnosisGraph:
             config=self.config,
         ).setup_graph(self.selected_analysts)
 
-    def diagnose(self, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    def diagnose(
+        self,
+        payload: dict[str, Any],
+        progress_callback: Any | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         diagnosis_id = payload.get("diagnosis_id") or str(uuid4())
         case_date = payload.get("case_date") or datetime.now(timezone.utc).isoformat()
         state = build_initial_state(payload, diagnosis_id=diagnosis_id, case_date=case_date)
-        final_state = self.graph.invoke(state)
+        if progress_callback is None:
+            final_state = self.graph.invoke(state)
+        else:
+            final_state = state
+            for snapshot in self.graph.stream(state, stream_mode="values"):
+                final_state = snapshot
+                progress_callback(snapshot)
         result = self.signal_processor.process_result(final_state)
         return final_state, result

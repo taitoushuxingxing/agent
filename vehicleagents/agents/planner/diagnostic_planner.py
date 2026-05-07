@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..utils.agent_utils import append_trace
+
 
 def create_diagnostic_planner(llm=None, memory=None):
     def diagnostic_planner_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -17,10 +19,12 @@ def create_diagnostic_planner(llm=None, memory=None):
 
         debate = dict(state.get("diagnostic_debate_state") or {})
         debate["planner_decision"] = json.dumps(plan, ensure_ascii=False)
-        return {
+        updates = append_trace(state, "Diagnostic Planner", "completed", plan.get("planner_source", ""))
+        updates.update({
             "diagnostic_debate_state": debate,
             "diagnostic_plan": json.dumps(plan, ensure_ascii=False, indent=2),
-        }
+        })
+        return updates
 
     return diagnostic_planner_node
 

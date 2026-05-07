@@ -55,6 +55,12 @@ class VehicleDiagnosisState(MessagesState):
     safety_review_state: Annotated[SafetyReviewState, "Safety review"]
     final_diagnosis: Annotated[str, "Final diagnosis"]
     structured_result: Annotated[dict[str, Any], "Machine readable result"]
+    current_node: Annotated[str, "Current graph node"]
+    graph_trace: Annotated[list[dict[str, Any]], "Graph transition trace"]
+    analyst_conclusions: Annotated[dict[str, str], "Compact analyst conclusions"]
+    analyst_tool_results: Annotated[dict[str, list[dict[str, Any]]], "Tool results grouped by analyst"]
+    pending_tool_owner: Annotated[str, "Analyst currently waiting for tool output"]
+    tool_errors: Annotated[list[dict[str, Any]], "Recoverable tool execution errors"]
 
 
 def build_initial_state(payload: dict[str, Any], diagnosis_id: str, case_date: str) -> dict[str, Any]:
@@ -104,5 +110,16 @@ def build_initial_state(payload: dict[str, Any], diagnosis_id: str, case_date: s
         },
         "final_diagnosis": "",
         "structured_result": {},
+        "current_node": "START",
+        "graph_trace": [
+            {
+                "node": "START",
+                "status": "entered",
+                "detail": "initial_state_created",
+            }
+        ],
+        "analyst_conclusions": {},
+        "analyst_tool_results": {},
+        "pending_tool_owner": "",
+        "tool_errors": [],
     }
-

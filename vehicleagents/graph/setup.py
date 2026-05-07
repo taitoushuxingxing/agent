@@ -19,6 +19,7 @@ from vehicleagents.agents import (
     create_safety_judge,
     create_symptom_analyst,
     create_telemetry_analyst,
+    create_vehicle_tool_node,
     create_vin_context_analyst,
 )
 from vehicleagents.agents.utils.agent_states import VehicleDiagnosisState
@@ -65,7 +66,18 @@ class VehicleGraphSetup:
         for key in selected:
             node_title, node = analyst_factories[key]
             workflow.add_node(f"{node_title} Analyst", node)
-            workflow.add_node(f"Msg Clear {node_title}", create_msg_delete())
+            workflow.add_node(f"Msg Clear {node_title}", create_msg_delete(node_title))
+            workflow.add_node(
+                f"tools_{key}",
+                create_vehicle_tool_node(
+                    key,
+                    f"tools_{key}",
+                    self._tools_for_analyst(key),
+                    max_tool_calls=self.conditional_logic.max_tool_calls_for(key),
+                    max_retries=int(self.config.get("tool_max_retries", 1)),
+                    timeout_seconds=float(self.config.get("tool_timeout_seconds", 10)),
+                ),
+            )
 
         workflow.add_node("Hypothesis Researcher", create_hypothesis_researcher(self.quick_llm, self.memory))
         workflow.add_node("Counterfactual Researcher", create_counterfactual_researcher(self.quick_llm, self.memory))
@@ -81,7 +93,15 @@ class VehicleGraphSetup:
         for index, key in enumerate(selected):
             node_title = analyst_factories[key][0]
             clear_node = f"Msg Clear {node_title}"
-            workflow.add_edge(f"{node_title} Analyst", clear_node)
+            workflow.add_conditional_edges(
+                f"{node_title} Analyst",
+                self._conditional_for_analyst(key),
+                {
+                    f"tools_{key}": f"tools_{key}",
+                    clear_node: clear_node,
+                },
+            )
+            workflow.add_edge(f"tools_{key}", f"{node_title} Analyst")
             if index < len(selected) - 1:
                 next_title = analyst_factories[selected[index + 1]][0]
                 workflow.add_edge(clear_node, f"{next_title} Analyst")
@@ -116,3 +136,30 @@ class VehicleGraphSetup:
         )
         workflow.add_edge("Safety Judge", END)
         return workflow.compile()
+
+    def _tools_for_analyst(self, key: str) -> list[Any]:
+        return {
+            "vin_context": [
+                self.toolkit.get_vehicle_profile_by_vin,
+                self.toolkit.get_dtc_history_by_vin,
+                self.toolkit.get_maintenance_history_by_vin,
+            ],
+            "symptom": [self.toolkit.retrieve_repair_cases],
+            "dtc": [self.toolkit.lookup_dtc_code, self.toolkit.search_dtc_combinations],
+            "telemetry": [
+                self.toolkit.get_sensor_snapshot_by_vin,
+                self.toolkit.get_sensor_timeseries_by_vin,
+                self.toolkit.get_event_logs_by_vin,
+                self.toolkit.analyze_telemetry_rules,
+            ],
+            "knowledge": [self.toolkit.retrieve_repair_cases],
+        }[key]
+
+    def _conditional_for_analyst(self, key: str):
+        return {
+            "vin_context": self.conditional_logic.should_continue_vin_context,
+            "symptom": self.conditional_logic.should_continue_symptom,
+            "dtc": self.conditional_logic.should_continue_dtc,
+            "telemetry": self.conditional_logic.should_continue_telemetry,
+            "knowledge": self.conditional_logic.should_continue_knowledge,
+        }[key]

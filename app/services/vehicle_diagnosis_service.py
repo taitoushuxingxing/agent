@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
+import time
+from collections import OrderedDict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -30,6 +34,17 @@ DEPTH_DEFAULTS = {
 }
 
 
+@dataclass
+class GraphCacheEntry:
+    graph: VehicleDiagnosisGraph
+    created_at: float
+    last_used_at: float
+
+
+class TaskCancelledDuringGraph(RuntimeError):
+    """Raised inside the graph worker thread when a running task is cancelled."""
+
+
 class VehicleDiagnosisService:
     def __init__(
         self,
@@ -39,7 +54,10 @@ class VehicleDiagnosisService:
     ) -> None:
         settings = get_settings()
         self.tasks: dict[str, DiagnosisTask] = {}
-        self._graph_cache: dict[str, VehicleDiagnosisGraph] = {}
+        self._graph_cache: OrderedDict[str, GraphCacheEntry] = OrderedDict()
+        self._graph_cache_lock = threading.RLock()
+        self.graph_cache_max_size = max(settings.graph_cache_max_size, 0)
+        self.graph_cache_ttl_seconds = max(settings.graph_cache_ttl_seconds, 0)
         self.repository = repository or MongoVehicleDiagnosisRepository(settings.mongo_uri, settings.mongo_database)
         self.memory = memory or self._build_memory(settings)
         self.queue = task_queue or RedisTaskQueue(settings.redis_url, settings.redis_queue_name, settings.queue_max_size)
@@ -136,8 +154,33 @@ class VehicleDiagnosisService:
         logger.info("task_started", extra={"_task_id": task_id})
         try:
             graph = self._get_graph(task.request)
+            loop = asyncio.get_running_loop()
+            last_progress_signature: dict[str, Any] = {"value": None}
+
+            def on_graph_progress(snapshot: dict[str, Any]) -> None:
+                signature = (snapshot.get("current_node"), len(snapshot.get("graph_trace") or []))
+                if signature == last_progress_signature["value"]:
+                    return
+                last_progress_signature["value"] = signature
+                future = asyncio.run_coroutine_threadsafe(
+                    self._save_progress_snapshot(task_id, snapshot),
+                    loop,
+                )
+                try:
+                    future.result(timeout=5)
+                except Exception:
+                    logger.exception("task_progress_update_failed", extra={"_task_id": task_id})
+                cancel_future = asyncio.run_coroutine_threadsafe(self._is_cancel_requested(task_id), loop)
+                try:
+                    if cancel_future.result(timeout=5):
+                        raise TaskCancelledDuringGraph()
+                except TaskCancelledDuringGraph:
+                    raise
+                except Exception:
+                    logger.exception("task_cancel_check_failed", extra={"_task_id": task_id})
+
             state, result = await asyncio.wait_for(
-                asyncio.to_thread(graph.diagnose, task.request),
+                asyncio.to_thread(graph.diagnose, task.request, on_graph_progress),
                 timeout=self.task_timeout_seconds,
             )
             finished_at = datetime.now(timezone.utc).isoformat()
@@ -165,6 +208,9 @@ class VehicleDiagnosisService:
             task.updated_at = failed_at
             await self.repository.save_task(task)
             logger.exception("task_timeout", extra={"_task_id": task_id})
+        except TaskCancelledDuringGraph:
+            latest_task = await self.repository.get_task(task_id)
+            await self._mark_cancelled(latest_task or task)
         except Exception as exc:
             failed_at = datetime.now(timezone.utc).isoformat()
             task.status = "failed"
@@ -251,15 +297,79 @@ class VehicleDiagnosisService:
         config = self._build_graph_config(payload)
         selected_analysts = config.pop("selected_analysts")
         cache_key = json.dumps({"selected_analysts": selected_analysts, **config}, sort_keys=True)
-        if cache_key not in self._graph_cache:
-            self._graph_cache[cache_key] = VehicleDiagnosisGraph(
+        with self._graph_cache_lock:
+            self._prune_graph_cache()
+            now = time.monotonic()
+            cached = self._graph_cache.get(cache_key)
+            if cached is not None:
+                cached.last_used_at = now
+                self._graph_cache.move_to_end(cache_key)
+                return cached.graph
+
+            graph = VehicleDiagnosisGraph(
                 selected_analysts=selected_analysts,
                 config=config,
                 quick_llm=self.quick_llm,
                 deep_llm=self.deep_llm,
                 memory=self.memory,
             )
-        return self._graph_cache[cache_key]
+            if self.graph_cache_max_size == 0:
+                return graph
+            self._graph_cache[cache_key] = GraphCacheEntry(graph=graph, created_at=now, last_used_at=now)
+            self._prune_graph_cache()
+            return graph
+
+    def clear_graph_cache(self) -> None:
+        with self._graph_cache_lock:
+            self._graph_cache.clear()
+
+    def _prune_graph_cache(self) -> None:
+        if not self._graph_cache:
+            return
+        now = time.monotonic()
+        if self.graph_cache_ttl_seconds:
+            expired = [
+                key
+                for key, entry in self._graph_cache.items()
+                if now - entry.last_used_at > self.graph_cache_ttl_seconds
+            ]
+            for key in expired:
+                self._graph_cache.pop(key, None)
+        if self.graph_cache_max_size == 0:
+            self._graph_cache.clear()
+            return
+        while len(self._graph_cache) > self.graph_cache_max_size:
+            self._graph_cache.popitem(last=False)
+
+    async def _save_progress_snapshot(self, task_id: str, state: dict[str, Any]) -> None:
+        task = self.tasks.get(task_id) or await self.repository.get_task(task_id)
+        if not task or task.status != "running":
+            return
+        task.state = state
+        task.current_step = state.get("current_node") or task.current_step
+        task.progress = max(task.progress, self._progress_from_state(task.request, state))
+        task.updated_at = datetime.now(timezone.utc).isoformat()
+        self.tasks[task_id] = task
+        await self.repository.save_task(task)
+
+    async def _is_cancel_requested(self, task_id: str) -> bool:
+        task = self.tasks.get(task_id) or await self.repository.get_task(task_id)
+        return bool(task and task.status == "cancel_requested")
+
+    def _progress_from_state(self, payload: dict[str, Any], state: dict[str, Any]) -> int:
+        config = self._build_graph_config(payload)
+        selected = config.get("selected_analysts") or []
+        estimated_steps = max(
+            8,
+            len(selected) * 3
+            + (config.get("max_debate_rounds", 1) * 2)
+            + config.get("max_safety_discuss_rounds", 1)
+            + 3,
+        )
+        trace_count = len(state.get("graph_trace") or [])
+        if state.get("structured_result"):
+            return 95
+        return min(95, 10 + int((min(trace_count, estimated_steps) / estimated_steps) * 85))
 
     def _build_graph_config(self, payload: dict[str, Any]) -> dict[str, Any]:
         parameters = payload.get("parameters") or {}
@@ -274,6 +384,16 @@ class VehicleDiagnosisService:
         ]
         if parameters.get("max_debate_rounds") is not None:
             config["max_debate_rounds"] = parameters["max_debate_rounds"]
+        if parameters.get("max_safety_discuss_rounds") is not None:
+            config["max_safety_discuss_rounds"] = parameters["max_safety_discuss_rounds"]
+        if parameters.get("max_tool_calls") is not None:
+            config["max_tool_calls"] = parameters["max_tool_calls"]
+        if parameters.get("analyst_max_tool_calls") is not None:
+            config["analyst_max_tool_calls"] = parameters["analyst_max_tool_calls"]
+        if parameters.get("tool_timeout_seconds") is not None:
+            config["tool_timeout_seconds"] = parameters["tool_timeout_seconds"]
+        if parameters.get("tool_max_retries") is not None:
+            config["tool_max_retries"] = parameters["tool_max_retries"]
         return config
 
     async def _worker_loop(self, index: int) -> None:

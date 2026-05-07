@@ -25,11 +25,16 @@ class DiagnosisTask:
     completed_at: str | None = None
 
     def to_status(self) -> dict[str, Any]:
+        state = self.state or {}
         return {
             "task_id": self.task_id,
             "status": self.status,
             "progress": self.progress,
             "current_step": self.current_step,
+            "current_node": state.get("current_node", self.current_step),
+            "graph_trace": state.get("graph_trace", []),
+            "analyst_conclusions": state.get("analyst_conclusions", {}),
+            "tool_errors": state.get("tool_errors", []),
             "queue_position": self.queue_position,
             "error_message": self.error_message,
             "created_at": self.created_at,

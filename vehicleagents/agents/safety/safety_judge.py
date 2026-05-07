@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..utils.agent_utils import append_trace
+
 
 def create_safety_judge(llm=None, memory=None):
     def safety_judge_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -25,6 +27,9 @@ def create_safety_judge(llm=None, memory=None):
             "inspection_plan": plan.get("next_tests", []),
             "repair_advice": repair,
             "telemetry_findings": _loads(state.get("telemetry_report"), {}).get("rule_findings", {}).get("findings", []),
+            "analyst_conclusions": state.get("analyst_conclusions", {}),
+            "tool_errors": state.get("tool_errors", []),
+            "diagnostic_trace": state.get("graph_trace", []),
             "reports": {
                 "vehicle_profile_report": state.get("vehicle_profile_report", ""),
                 "symptom_report": state.get("symptom_report", ""),
@@ -37,11 +42,13 @@ def create_safety_judge(llm=None, memory=None):
         }
         safety = dict(state.get("safety_review_state") or {})
         safety["judge_decision"] = json.dumps(final, ensure_ascii=False)
-        return {
+        updates = append_trace(state, "Safety Judge", "completed", safety_level)
+        updates.update({
             "safety_review_state": safety,
             "final_diagnosis": json.dumps(final, ensure_ascii=False, indent=2),
             "structured_result": final,
-        }
+        })
+        return updates
 
     return safety_judge_node
 
@@ -62,4 +69,3 @@ def _summary(hypotheses: list[dict[str, Any]]) -> str:
         return "No clear fault hypothesis yet; collect DTC and telemetry data first."
     top = hypotheses[0]
     return f"Most likely fault: {top.get('fault', 'unknown')}."
-

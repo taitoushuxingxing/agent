@@ -43,6 +43,11 @@ class DiagnosisParameters(BaseModel):
     )
     diagnosis_depth: str = "standard"
     max_debate_rounds: int | None = None
+    max_safety_discuss_rounds: int | None = None
+    max_tool_calls: int | None = None
+    analyst_max_tool_calls: dict[str, int] | None = None
+    tool_timeout_seconds: float | None = None
+    tool_max_retries: int | None = None
 
     @field_validator("selected_analysts")
     @classmethod
@@ -71,6 +76,56 @@ class DiagnosisParameters(BaseModel):
             return value
         if value < 0 or value > 5:
             raise ValueError("max_debate_rounds must be between 0 and 5")
+        return value
+
+    @field_validator("max_safety_discuss_rounds")
+    @classmethod
+    def validate_max_safety_discuss_rounds(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
+        if value < 0 or value > 5:
+            raise ValueError("max_safety_discuss_rounds must be between 0 and 5")
+        return value
+
+    @field_validator("max_tool_calls")
+    @classmethod
+    def validate_max_tool_calls(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
+        if value < 0 or value > 20:
+            raise ValueError("max_tool_calls must be between 0 and 20")
+        return value
+
+    @field_validator("analyst_max_tool_calls")
+    @classmethod
+    def validate_analyst_max_tool_calls(cls, value: dict[str, int] | None) -> dict[str, int] | None:
+        if value is None:
+            return value
+        unknown = [key for key in value if key not in SUPPORTED_ANALYSTS and key != "default"]
+        if unknown:
+            supported = ", ".join(sorted(SUPPORTED_ANALYSTS | {"default"}))
+            raise ValueError(f"unknown analyst_max_tool_calls keys: {', '.join(unknown)}. Supported keys: {supported}")
+        invalid = {key: count for key, count in value.items() if count < 0 or count > 20}
+        if invalid:
+            raise ValueError("analyst_max_tool_calls values must be between 0 and 20")
+        return value
+
+    @field_validator("tool_timeout_seconds")
+    @classmethod
+    def validate_tool_timeout_seconds(cls, value: float | None) -> float | None:
+        if value is None:
+            return value
+        if value < 0 or value > 120:
+            raise ValueError("tool_timeout_seconds must be between 0 and 120")
+        return value
+
+    @field_validator("tool_max_retries")
+    @classmethod
+    def validate_tool_max_retries(cls, value: int | None) -> int | None:
+        if value is None:
+            return value
+        if value < 0 or value > 5:
+            raise ValueError("tool_max_retries must be between 0 and 5")
         return value
 
 

@@ -1,6 +1,8 @@
 import asyncio
 import json
+import time
 
+from langchain_core.messages import AIMessage
 import pytest
 
 from app.core.llm_config import load_llm_config
@@ -9,6 +11,7 @@ from app.repositories.vehicle_diagnosis_repository import VehicleDiagnosisReposi
 from app.schemas.vehicle_diagnosis import DiagnosisParameters
 from app.services.vehicle_diagnosis_service import VehicleDiagnosisService
 from app.queues.task_queue import InMemoryTaskQueue
+from vehicleagents.dataflows import interface
 from vehicleagents.dataflows.providers.mongo_client import get_data_provider_mode, get_database
 from vehicleagents.graph import VehicleDiagnosisGraph
 
@@ -30,6 +33,23 @@ class FakePlannerLLM:
                 "stop_conditions": ["MIL flashing"],
                 "confidence": 0.71,
             }
+        )
+
+
+class FakeToolCallingLLM:
+    def bind_tools(self, tools):
+        return self
+
+    def invoke(self, prompt: str):
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "lookup_dtc_code",
+                    "args": {"code": "P0301"},
+                    "id": "fake-tool-call",
+                }
+            ],
         )
 
 
@@ -58,6 +78,74 @@ def test_graph_respects_selected_analysts():
     assert state["dtc_report"]
     assert state["vehicle_profile_report"] == ""
     assert result["ranked_hypotheses"][0]["fault"] == "Cylinder 1 ignition system fault"
+
+
+def test_graph_records_tool_flow_and_cleans_messages():
+    graph = VehicleDiagnosisGraph(selected_analysts=["dtc"])
+    state, _ = graph.diagnose({"dtc_codes": ["P0301"]})
+
+    assert state["dtc_tool_call_count"] == 2
+    assert any(item["node"] == "tools_dtc" for item in state["graph_trace"])
+    assert state["analyst_conclusions"]["Diagnostic Code Analyst"].startswith("有问题")
+    assert [message.content for message in state["messages"]] == [
+        f"[Diagnostic Code Analyst：{state['analyst_conclusions']['Diagnostic Code Analyst']}]"
+    ]
+
+
+def test_graph_continues_when_tool_fails(monkeypatch):
+    def fail_lookup(*args, **kwargs):
+        raise RuntimeError("dtc backend unavailable")
+
+    monkeypatch.setattr(interface, "lookup_dtc_code", fail_lookup)
+
+    graph = VehicleDiagnosisGraph(selected_analysts=["dtc"])
+    state, result = graph.diagnose({"dtc_codes": ["P0301"]})
+
+    assert state["tool_errors"]
+    assert state["dtc_report"]
+    assert result["ranked_hypotheses"]
+
+
+def test_graph_retries_transient_tool_failure(monkeypatch):
+    original_lookup = interface.lookup_dtc_code
+    calls = {"count": 0}
+
+    def flaky_lookup(*args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("temporary dtc backend error")
+        return original_lookup(*args, **kwargs)
+
+    monkeypatch.setattr(interface, "lookup_dtc_code", flaky_lookup)
+
+    graph = VehicleDiagnosisGraph(
+        selected_analysts=["dtc"],
+        config={"tool_max_retries": 1},
+    )
+    state, _ = graph.diagnose({"dtc_codes": ["P0301"]})
+
+    assert calls["count"] == 2
+    assert not state["tool_errors"]
+
+
+def test_graph_uses_llm_tool_call_decision():
+    graph = VehicleDiagnosisGraph(selected_analysts=["dtc"], quick_llm=FakeToolCallingLLM())
+    state, _ = graph.diagnose({"dtc_codes": ["P0301"]})
+
+    assert state["dtc_tool_call_count"] == 1
+    assert state["analyst_tool_results"]["dtc"][0]["tool"] == "lookup_dtc_code"
+    assert state["analyst_conclusions"]["Diagnostic Code Analyst"].startswith("有问题")
+
+
+def test_graph_respects_per_analyst_tool_limit():
+    graph = VehicleDiagnosisGraph(
+        selected_analysts=["dtc"],
+        config={"analyst_max_tool_calls": {"dtc": 1}},
+    )
+    state, _ = graph.diagnose({"dtc_codes": ["P0301"]})
+
+    assert state["dtc_tool_call_count"] == 1
+    assert state["tool_errors"][0]["error"] == "max_tool_calls exceeded for dtc"
 
 
 def test_graph_respects_debate_round_config():
@@ -150,6 +238,22 @@ def test_service_executes_depth_config_and_stores_outcome(tmp_path):
     asyncio.run(run_case())
 
 
+def test_service_graph_cache_prunes_by_size_and_can_clear(tmp_path):
+    service = VehicleDiagnosisService(
+        repository=VehicleDiagnosisRepository(tmp_path / "diagnosis.sqlite3"),
+        task_queue=InMemoryTaskQueue(),
+    )
+    service.graph_cache_max_size = 1
+
+    first = service._get_graph({"parameters": {"selected_analysts": ["dtc"]}})
+    second = service._get_graph({"parameters": {"selected_analysts": ["symptom"]}})
+
+    assert first is not second
+    assert len(service._graph_cache) == 1
+    service.clear_graph_cache()
+    assert len(service._graph_cache) == 0
+
+
 def test_service_persists_completed_task_across_instances(tmp_path):
     async def run_case():
         db_path = tmp_path / "diagnosis.sqlite3"
@@ -175,6 +279,8 @@ def test_service_persists_completed_task_across_instances(tmp_path):
         result = await restarted_service.get_result(task_id)
 
         assert status["status"] == "completed"
+        assert status["current_node"] == "Safety Judge"
+        assert status["graph_trace"]
         assert result["vin"] == "LFV3A23C0J3000001"
         assert result["ranked_hypotheses"][0]["fault"] == "Cylinder 1 ignition system fault"
 
@@ -206,6 +312,79 @@ def test_service_queue_worker_executes_task(tmp_path):
             assert result["ranked_hypotheses"]
         finally:
             await service.stop_workers()
+
+    asyncio.run(run_case())
+
+
+def test_service_updates_status_while_graph_is_running(monkeypatch, tmp_path):
+    original_lookup = interface.lookup_dtc_code
+
+    def slow_lookup(*args, **kwargs):
+        time.sleep(0.25)
+        return original_lookup(*args, **kwargs)
+
+    monkeypatch.setattr(interface, "lookup_dtc_code", slow_lookup)
+
+    async def run_case():
+        service = VehicleDiagnosisService(
+            repository=VehicleDiagnosisRepository(tmp_path / "diagnosis.sqlite3"),
+            task_queue=InMemoryTaskQueue(),
+        )
+        created = await service.create_task(
+            {
+                "dtc_codes": ["P0301"],
+                "parameters": {"selected_analysts": ["dtc"]},
+            }
+        )
+        task_id = created["task_id"]
+        running = asyncio.create_task(service.execute_task(task_id))
+        observed = False
+        for _ in range(50):
+            await asyncio.sleep(0.02)
+            status = await service.get_status(task_id)
+            if status and status["status"] == "running" and status["current_node"] != "VehicleDiagnosisGraph":
+                observed = True
+                break
+        await running
+
+        assert observed
+
+    asyncio.run(run_case())
+
+
+def test_service_can_cancel_running_task_during_graph_stream(monkeypatch, tmp_path):
+    original_lookup = interface.lookup_dtc_code
+
+    def slow_lookup(*args, **kwargs):
+        time.sleep(0.25)
+        return original_lookup(*args, **kwargs)
+
+    monkeypatch.setattr(interface, "lookup_dtc_code", slow_lookup)
+
+    async def run_case():
+        service = VehicleDiagnosisService(
+            repository=VehicleDiagnosisRepository(tmp_path / "diagnosis.sqlite3"),
+            task_queue=InMemoryTaskQueue(),
+        )
+        created = await service.create_task(
+            {
+                "dtc_codes": ["P0301"],
+                "parameters": {"selected_analysts": ["dtc"]},
+            }
+        )
+        task_id = created["task_id"]
+        running = asyncio.create_task(service.execute_task(task_id))
+        for _ in range(50):
+            await asyncio.sleep(0.02)
+            status = await service.get_status(task_id)
+            if status and status["status"] == "running" and status["current_node"] != "VehicleDiagnosisGraph":
+                break
+        cancel_result = await service.cancel_task(task_id)
+        await running
+        status = await service.get_status(task_id)
+
+        assert cancel_result["status"] == "cancel_requested"
+        assert status["status"] == "cancelled"
 
     asyncio.run(run_case())
 
