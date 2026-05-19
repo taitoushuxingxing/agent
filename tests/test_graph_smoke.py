@@ -20,6 +20,7 @@ class FakePlannerLLM:
     def invoke(self, prompt: str) -> str:
         return json.dumps(
             {
+                "summary": "LLM synthesized ignition fault.",
                 "ranked_hypotheses": [
                     {
                         "rank": 1,
@@ -29,9 +30,8 @@ class FakePlannerLLM:
                         "evidence_against": [],
                     }
                 ],
-                "next_tests": ["Run coil swap test."],
-                "stop_conditions": ["MIL flashing"],
-                "confidence": 0.71,
+                "inspection_plan": ["Run coil swap test."],
+                "confidence_score": 0.71,
             }
         )
 
@@ -148,14 +148,7 @@ def test_graph_respects_per_analyst_tool_limit():
     assert state["tool_errors"][0]["error"] == "max_tool_calls exceeded for dtc"
 
 
-def test_graph_respects_debate_round_config():
-    graph = VehicleDiagnosisGraph(selected_analysts=["dtc"], config={"max_debate_rounds": 2})
-    state, _ = graph.diagnose({"dtc_codes": ["P0301"]})
-
-    assert state["diagnostic_debate_state"]["count"] == 4
-
-
-def test_graph_uses_llm_planner_when_available():
+def test_graph_uses_llm_summary_when_available():
     graph = VehicleDiagnosisGraph(selected_analysts=["dtc"], deep_llm=FakePlannerLLM())
     _, result = graph.diagnose({"dtc_codes": ["P0301"]})
 
@@ -213,7 +206,7 @@ def test_service_executes_depth_config_and_stores_outcome(tmp_path):
                 "dtc_codes": ["P0301"],
                 "parameters": {
                     "selected_analysts": ["dtc"],
-                    "diagnosis_depth": "deep",
+                    "diagnosis_depth": "standard",
                 },
             }
         )
@@ -279,7 +272,7 @@ def test_service_persists_completed_task_across_instances(tmp_path):
         result = await restarted_service.get_result(task_id)
 
         assert status["status"] == "completed"
-        assert status["current_node"] == "Safety Judge"
+        assert status["current_node"] == "Summary Agent"
         assert status["graph_trace"]
         assert result["vin"] == "LFV3A23C0J3000001"
         assert result["ranked_hypotheses"][0]["fault"] == "Cylinder 1 ignition system fault"

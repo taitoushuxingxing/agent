@@ -13,7 +13,7 @@ from vehicleagents.graph.conditional_logic import VehicleConditionalLogic
 from vehicleagents.graph.setup import VehicleGraphSetup
 from vehicleagents.graph.signal_processing import VehicleSignalProcessor
 
-DEFAULT_ANALYSTS = ["vin_context", "symptom", "dtc", "telemetry", "knowledge"]
+DEFAULT_ANALYSTS = ["vin_context", "symptom", "dtc", "knowledge", "experience"]
 
 
 class VehicleDiagnosisGraph:
@@ -40,8 +40,6 @@ class VehicleDiagnosisGraph:
         self.memory = memory or VehicleDiagnosisMemory()
         self.conditional_logic = VehicleConditionalLogic(
             max_tool_calls=self.config.get("analyst_max_tool_calls", self.config.get("max_tool_calls", 2)),
-            max_debate_rounds=self.config.get("max_debate_rounds", 1),
-            max_safety_discuss_rounds=self.config.get("max_safety_discuss_rounds", 1),
         )
         self.signal_processor = VehicleSignalProcessor()
         self.graph = VehicleGraphSetup(

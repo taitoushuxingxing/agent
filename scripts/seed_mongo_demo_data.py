@@ -23,9 +23,6 @@ def main() -> None:
     _seed_vehicle_profile(db)
     _seed_dtc_history(db)
     _seed_maintenance_history(db)
-    _seed_sensor_snapshot(db)
-    _seed_sensor_timeseries(db)
-    _seed_event_logs(db)
     _seed_repair_cases(db)
 
     print(f"Seeded MongoDB database '{database_name}' with demo VIN {VIN}.")
@@ -35,9 +32,6 @@ def _ensure_indexes(db) -> None:
     db.vehicle_profiles.create_index([("vin", ASCENDING)], unique=True)
     db.vin_dtc_history.create_index([("vin", ASCENDING), ("code", ASCENDING)])
     db.vin_maintenance_history.create_index([("vin", ASCENDING), ("service_date", ASCENDING)])
-    db.vin_sensor_snapshots.create_index([("vin", ASCENDING), ("captured_at", ASCENDING)])
-    db.vin_sensor_timeseries.create_index([("vin", ASCENDING), ("signal", ASCENDING)], unique=True)
-    db.vin_event_logs.create_index([("vin", ASCENDING), ("event_id", ASCENDING)], unique=True)
     db.repair_cases.create_index([("case_id", ASCENDING)], unique=True)
     db.repair_cases.create_index([("dtc_codes", ASCENDING)])
 
@@ -111,74 +105,6 @@ def _seed_maintenance_history(db) -> None:
     )
 
 
-def _seed_sensor_snapshot(db) -> None:
-    snapshot = {
-        "vin": VIN,
-        "snapshot_id": "seed_snapshot_rough_idle_001",
-        "captured_at": "2026-05-06T09:31:00+08:00",
-        "source": "seed_sensor_snapshot",
-        "quality": "good",
-        "signals": {
-            "rpm": {"value": 742, "unit": "rpm", "quality": "good"},
-            "battery_voltage": {"value": 12.3, "unit": "V", "quality": "good"},
-            "coolant_temp_c": {"value": 91, "unit": "C", "quality": "good"},
-            "stft_b1": {"value": 19.4, "unit": "%", "quality": "good"},
-            "ltft_b1": {"value": 13.2, "unit": "%", "quality": "good"},
-            "misfire_count_cyl_1": {"value": 57, "unit": "count", "quality": "good"},
-        },
-    }
-    db.vin_sensor_snapshots.update_one(
-        {"vin": VIN, "snapshot_id": snapshot["snapshot_id"]},
-        {"$set": snapshot},
-        upsert=True,
-    )
-
-
-def _seed_sensor_timeseries(db) -> None:
-    series = {
-        "rpm": [760, 735, 710, 780, 725],
-        "stft_b1": [16.8, 18.2, 19.4, 21.0, 18.9],
-        "ltft_b1": [11.6, 12.4, 13.2, 13.1, 12.9],
-        "misfire_count_cyl_1": [8, 15, 27, 43, 57],
-        "battery_voltage": [12.4, 12.3, 12.3, 12.2, 12.3],
-        "coolant_temp_c": [88, 89, 90, 91, 91],
-    }
-    for signal, values in series.items():
-        points = [
-            {
-                "ts": f"2026-05-06T09:3{index}:00+08:00",
-                "value": value,
-                "unit": _unit_for_signal(signal),
-                "quality": "good",
-            }
-            for index, value in enumerate(values)
-        ]
-        db.vin_sensor_timeseries.update_one(
-            {"vin": VIN, "signal": signal},
-            {"$set": {"vin": VIN, "signal": signal, "points": points}},
-            upsert=True,
-        )
-
-
-def _seed_event_logs(db) -> None:
-    event = {
-        "vin": VIN,
-        "event_id": "seed_evt_rough_idle_001",
-        "event_name": "rough_idle_detected",
-        "event_type": "vehicle_state",
-        "severity": "medium",
-        "occurred_at": "2026-05-06T09:30:20+08:00",
-        "source": "seed_event_log",
-        "payload": {"duration_sec": 31, "rpm_variance": 210},
-        "tags": ["idle", "engine", "misfire"],
-    }
-    db.vin_event_logs.update_one(
-        {"vin": VIN, "event_id": event["event_id"]},
-        {"$set": event},
-        upsert=True,
-    )
-
-
 def _seed_repair_cases(db) -> None:
     cases = [
         {
@@ -206,17 +132,6 @@ def _seed_repair_cases(db) -> None:
             {"$set": case},
             upsert=True,
         )
-
-
-def _unit_for_signal(signal: str) -> str:
-    return {
-        "rpm": "rpm",
-        "stft_b1": "%",
-        "ltft_b1": "%",
-        "misfire_count_cyl_1": "count",
-        "battery_voltage": "V",
-        "coolant_temp_c": "C",
-    }.get(signal, "")
 
 
 def _now() -> str:

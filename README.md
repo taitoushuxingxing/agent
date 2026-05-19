@@ -1,21 +1,21 @@
 # Vehicle Fault Diagnosis Agent
 
-FastAPI + LangGraph backend for vehicle fault diagnosis. The project follows the same high-level pattern as TradingAgents-CN: shared state, analyst nodes, tool/data providers, researcher debate, planner, safety judge, and memory feedback.
+FastAPI + LangGraph backend for vehicle fault diagnosis. The workflow is intentionally small: vehicle background, user description, DTC, knowledge, experience, and final summary agents.
 
 ## Production-Oriented Features
 
 - FastAPI service with `/health` and OpenAPI docs.
 - LangGraph multi-agent diagnosis workflow.
-- Configurable analysts: `vin_context`, `symptom`, `dtc`, `telemetry`, `knowledge`.
+- Configurable analysts: `vin_context`, `symptom`, `dtc`, `knowledge`, `experience`.
 - MongoDB persistence for tasks, results, outcomes, and memory cases.
 - Selectable vehicle data provider mode: `auto`, `mongo`, or `mock`.
 - Redis-backed async task queue with worker concurrency control.
 - Redis-backed request rate limiting.
 - Per-task execution timeout.
 - JSON structured logs and `x-request-id` request tracing.
-- Planner supports optional LLM evidence synthesis with deterministic rule fallback.
+- Summary agent supports optional LLM evidence synthesis with deterministic rule fallback.
 - OpenAI-compatible LLM client for OpenAI, DeepSeek, Qwen-compatible gateways, and similar `/chat/completions` APIs.
-- Dataflow/tool adapters for VIN, DTC, sensors, events, and repair cases.
+- Dataflow/tool adapters for VIN, DTC, knowledge cases, and confirmed experience cases.
 
 ## Install
 
@@ -117,7 +117,7 @@ Submit a diagnosis task:
 ```bash
 curl -X POST http://127.0.0.1:8000/api/vehicle-diagnosis/tasks ^
   -H "Content-Type: application/json" ^
-  -d "{\"vin\":\"LFV3A23C0J3000001\",\"symptoms\":[{\"name\":\"rough idle\",\"severity\":\"medium\"}],\"dtc_codes\":[\"P0301\",\"P0171\"],\"parameters\":{\"selected_analysts\":[\"vin_context\",\"symptom\",\"dtc\",\"telemetry\",\"knowledge\"],\"diagnosis_depth\":\"standard\"}}"
+  -d "{\"vin\":\"LFV3A23C0J3000001\",\"symptoms\":[{\"name\":\"rough idle\",\"severity\":\"medium\"}],\"dtc_codes\":[\"P0301\",\"P0171\"],\"parameters\":{\"selected_analysts\":[\"vin_context\",\"symptom\",\"dtc\",\"knowledge\",\"experience\"],\"diagnosis_depth\":\"standard\"}}"
 ```
 
 Query status:
@@ -159,7 +159,7 @@ pytest -q
 ## Remaining Production Work
 
 - Add authentication and user isolation.
-- Replace mock vehicle data providers with real VIN/OBD/telemetry systems.
+- Replace mock vehicle data providers with real VIN, DTC, knowledge, and case systems.
 - Add concrete LLM client factory and token/cost accounting.
 - Add Prometheus metrics and alerting.
 - Add Docker Compose or Kubernetes manifests for deployment.

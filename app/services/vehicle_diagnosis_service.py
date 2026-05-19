@@ -26,11 +26,9 @@ from ..repositories.mongo_vehicle_diagnosis_repository import MongoVehicleDiagno
 logger = get_logger("vehicle_diagnosis.service")
 
 DEPTH_DEFAULTS = {
-    "quick": {"max_debate_rounds": 0, "max_safety_discuss_rounds": 1},
-    "basic": {"max_debate_rounds": 1, "max_safety_discuss_rounds": 1},
-    "standard": {"max_debate_rounds": 1, "max_safety_discuss_rounds": 1},
-    "deep": {"max_debate_rounds": 2, "max_safety_discuss_rounds": 2},
-    "comprehensive": {"max_debate_rounds": 3, "max_safety_discuss_rounds": 3},
+    "quick": {},
+    "basic": {},
+    "standard": {},
 }
 
 
@@ -277,7 +275,6 @@ class VehicleDiagnosisService:
             "vehicle": task.request.get("vehicle") or {},
             "symptoms": task.request.get("symptoms") or [],
             "dtc_codes": task.request.get("dtc_codes") or [],
-            "telemetry_findings": (task.result or {}).get("telemetry_findings", []),
         }
         recommendation = {
             "confirmed_root_cause": outcome.get("confirmed_root_cause"),
@@ -360,11 +357,8 @@ class VehicleDiagnosisService:
         config = self._build_graph_config(payload)
         selected = config.get("selected_analysts") or []
         estimated_steps = max(
-            8,
-            len(selected) * 3
-            + (config.get("max_debate_rounds", 1) * 2)
-            + config.get("max_safety_discuss_rounds", 1)
-            + 3,
+            6,
+            len(selected) * 3 + 2,
         )
         trace_count = len(state.get("graph_trace") or [])
         if state.get("structured_result"):
@@ -379,13 +373,9 @@ class VehicleDiagnosisService:
             "vin_context",
             "symptom",
             "dtc",
-            "telemetry",
             "knowledge",
+            "experience",
         ]
-        if parameters.get("max_debate_rounds") is not None:
-            config["max_debate_rounds"] = parameters["max_debate_rounds"]
-        if parameters.get("max_safety_discuss_rounds") is not None:
-            config["max_safety_discuss_rounds"] = parameters["max_safety_discuss_rounds"]
         if parameters.get("max_tool_calls") is not None:
             config["max_tool_calls"] = parameters["max_tool_calls"]
         if parameters.get("analyst_max_tool_calls") is not None:

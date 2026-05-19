@@ -6,8 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-SUPPORTED_ANALYSTS = {"vin_context", "symptom", "dtc", "telemetry", "knowledge"}
-SUPPORTED_DEPTHS = {"quick", "basic", "standard", "deep", "comprehensive"}
+SUPPORTED_ANALYSTS = {"vin_context", "symptom", "dtc", "knowledge", "experience"}
+SUPPORTED_DEPTHS = {"quick", "basic", "standard"}
 
 
 class VehicleInfo(BaseModel):
@@ -39,11 +39,9 @@ class TimeRange(BaseModel):
 
 class DiagnosisParameters(BaseModel):
     selected_analysts: list[str] = Field(
-        default_factory=lambda: ["vin_context", "symptom", "dtc", "telemetry", "knowledge"]
+        default_factory=lambda: ["vin_context", "symptom", "dtc", "knowledge", "experience"]
     )
     diagnosis_depth: str = "standard"
-    max_debate_rounds: int | None = None
-    max_safety_discuss_rounds: int | None = None
     max_tool_calls: int | None = None
     analyst_max_tool_calls: dict[str, int] | None = None
     tool_timeout_seconds: float | None = None
@@ -68,24 +66,6 @@ class DiagnosisParameters(BaseModel):
             supported = ", ".join(sorted(SUPPORTED_DEPTHS))
             raise ValueError(f"diagnosis_depth must be one of: {supported}")
         return normalized
-
-    @field_validator("max_debate_rounds")
-    @classmethod
-    def validate_max_debate_rounds(cls, value: int | None) -> int | None:
-        if value is None:
-            return value
-        if value < 0 or value > 5:
-            raise ValueError("max_debate_rounds must be between 0 and 5")
-        return value
-
-    @field_validator("max_safety_discuss_rounds")
-    @classmethod
-    def validate_max_safety_discuss_rounds(cls, value: int | None) -> int | None:
-        if value is None:
-            return value
-        if value < 0 or value > 5:
-            raise ValueError("max_safety_discuss_rounds must be between 0 and 5")
-        return value
 
     @field_validator("max_tool_calls")
     @classmethod
@@ -134,7 +114,6 @@ class VehicleDiagnosisRequest(BaseModel):
     vehicle: VehicleInfo = Field(default_factory=VehicleInfo)
     symptoms: list[Symptom] = Field(default_factory=list)
     dtc_codes: list[str] = Field(default_factory=list)
-    sensor_snapshot: dict[str, Any] = Field(default_factory=dict)
     freeze_frame: dict[str, Any] = Field(default_factory=dict)
     maintenance_history: list[dict[str, Any]] = Field(default_factory=list)
     time_range: TimeRange | None = None

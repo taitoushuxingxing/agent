@@ -157,9 +157,6 @@ LFV3A23C0J3000001
 - `vehicle_profiles`
 - `vin_dtc_history`
 - `vin_maintenance_history`
-- `vin_sensor_snapshots`
-- `vin_sensor_timeseries`
-- `vin_event_logs`
 - `repair_cases`
 
 如果只是想不依赖 MongoDB 演示，可以把 `.env` 改成：
@@ -217,7 +214,7 @@ $body = @{
   )
   dtc_codes = @("P0301", "P0171")
   parameters = @{
-    selected_analysts = @("vin_context", "symptom", "dtc", "telemetry", "knowledge")
+    selected_analysts = @("vin_context", "symptom", "dtc", "knowledge", "experience")
     diagnosis_depth = "standard"
   }
 } | ConvertTo-Json -Depth 10

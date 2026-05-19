@@ -8,24 +8,19 @@ from langgraph.graph import END, START, StateGraph
 
 from vehicleagents.agents import (
     VehicleToolkit,
-    create_counterfactual_researcher,
     create_diagnostic_code_analyst,
-    create_diagnostic_planner,
-    create_hypothesis_researcher,
     create_knowledge_analyst,
     create_msg_delete,
-    create_repair_advisor,
-    create_safety_analyst,
-    create_safety_judge,
+    create_experience_analyst,
+    create_summary_agent,
     create_symptom_analyst,
-    create_telemetry_analyst,
     create_vehicle_tool_node,
     create_vin_context_analyst,
 )
 from vehicleagents.agents.utils.agent_states import VehicleDiagnosisState
 from vehicleagents.graph.conditional_logic import VehicleConditionalLogic
 
-DEFAULT_ANALYSTS = ["vin_context", "symptom", "dtc", "telemetry", "knowledge"]
+DEFAULT_ANALYSTS = ["vin_context", "symptom", "dtc", "knowledge", "experience"]
 
 
 class VehicleGraphSetup:
@@ -55,8 +50,8 @@ class VehicleGraphSetup:
             "vin_context": ("VIN Context", create_vin_context_analyst(self.quick_llm, self.toolkit)),
             "symptom": ("Symptom", create_symptom_analyst(self.quick_llm, self.toolkit)),
             "dtc": ("Diagnostic Code", create_diagnostic_code_analyst(self.quick_llm, self.toolkit)),
-            "telemetry": ("Telemetry", create_telemetry_analyst(self.quick_llm, self.toolkit)),
             "knowledge": ("Knowledge", create_knowledge_analyst(self.quick_llm, self.toolkit)),
+            "experience": ("Experience", create_experience_analyst(self.memory)),
         }
         unknown = [key for key in selected if key not in analyst_factories]
         if unknown:
@@ -79,12 +74,7 @@ class VehicleGraphSetup:
                 ),
             )
 
-        workflow.add_node("Hypothesis Researcher", create_hypothesis_researcher(self.quick_llm, self.memory))
-        workflow.add_node("Counterfactual Researcher", create_counterfactual_researcher(self.quick_llm, self.memory))
-        workflow.add_node("Diagnostic Planner", create_diagnostic_planner(self.deep_llm, self.memory))
-        workflow.add_node("Repair Advisor", create_repair_advisor(self.quick_llm, self.memory))
-        workflow.add_node("Safety Analyst", create_safety_analyst(self.quick_llm))
-        workflow.add_node("Safety Judge", create_safety_judge(self.deep_llm, self.memory))
+        workflow.add_node("Summary Agent", create_summary_agent(self.deep_llm))
 
         first_key = selected[0]
         first_title = analyst_factories[first_key][0]
@@ -106,35 +96,9 @@ class VehicleGraphSetup:
                 next_title = analyst_factories[selected[index + 1]][0]
                 workflow.add_edge(clear_node, f"{next_title} Analyst")
             else:
-                workflow.add_edge(clear_node, "Hypothesis Researcher")
+                workflow.add_edge(clear_node, "Summary Agent")
 
-        workflow.add_conditional_edges(
-            "Hypothesis Researcher",
-            self.conditional_logic.should_continue_debate,
-            {
-                "Counterfactual Researcher": "Counterfactual Researcher",
-                "Diagnostic Planner": "Diagnostic Planner",
-            },
-        )
-        workflow.add_conditional_edges(
-            "Counterfactual Researcher",
-            self.conditional_logic.should_continue_debate,
-            {
-                "Hypothesis Researcher": "Hypothesis Researcher",
-                "Diagnostic Planner": "Diagnostic Planner",
-            },
-        )
-        workflow.add_edge("Diagnostic Planner", "Repair Advisor")
-        workflow.add_edge("Repair Advisor", "Safety Analyst")
-        workflow.add_conditional_edges(
-            "Safety Analyst",
-            self.conditional_logic.should_continue_safety,
-            {
-                "Repair Advisor": "Repair Advisor",
-                "Safety Judge": "Safety Judge",
-            },
-        )
-        workflow.add_edge("Safety Judge", END)
+        workflow.add_edge("Summary Agent", END)
         return workflow.compile()
 
     def _tools_for_analyst(self, key: str) -> list[Any]:
@@ -146,13 +110,8 @@ class VehicleGraphSetup:
             ],
             "symptom": [self.toolkit.retrieve_repair_cases],
             "dtc": [self.toolkit.lookup_dtc_code, self.toolkit.search_dtc_combinations],
-            "telemetry": [
-                self.toolkit.get_sensor_snapshot_by_vin,
-                self.toolkit.get_sensor_timeseries_by_vin,
-                self.toolkit.get_event_logs_by_vin,
-                self.toolkit.analyze_telemetry_rules,
-            ],
             "knowledge": [self.toolkit.retrieve_repair_cases],
+            "experience": [],
         }[key]
 
     def _conditional_for_analyst(self, key: str):
@@ -160,6 +119,6 @@ class VehicleGraphSetup:
             "vin_context": self.conditional_logic.should_continue_vin_context,
             "symptom": self.conditional_logic.should_continue_symptom,
             "dtc": self.conditional_logic.should_continue_dtc,
-            "telemetry": self.conditional_logic.should_continue_telemetry,
             "knowledge": self.conditional_logic.should_continue_knowledge,
+            "experience": self.conditional_logic.should_continue_experience,
         }[key]

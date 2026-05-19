@@ -15,7 +15,6 @@ def create_knowledge_analyst(llm=None, toolkit=None):
             "vehicle": state.get("vehicle") or {},
             "symptoms": state.get("symptoms") or [],
             "dtc_codes": state.get("dtc_codes") or [],
-            "telemetry_report": state.get("telemetry_report") or "",
         }
         has_tool_results = bool((state.get("analyst_tool_results") or {}).get("knowledge"))
         if not has_tool_results and not state.get("knowledge_report"):
