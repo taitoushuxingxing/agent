@@ -374,7 +374,6 @@ class VehicleDiagnosisService:
             "symptom",
             "dtc",
             "knowledge",
-            "experience",
         ]
         if parameters.get("max_tool_calls") is not None:
             config["max_tool_calls"] = parameters["max_tool_calls"]

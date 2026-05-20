@@ -214,7 +214,7 @@ $body = @{
   )
   dtc_codes = @("P0301", "P0171")
   parameters = @{
-    selected_analysts = @("vin_context", "symptom", "dtc", "knowledge", "experience")
+    selected_analysts = @("vin_context", "symptom", "dtc", "knowledge")
     diagnosis_depth = "standard"
   }
 } | ConvertTo-Json -Depth 10

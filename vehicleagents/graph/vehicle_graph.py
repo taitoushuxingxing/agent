@@ -13,7 +13,7 @@ from vehicleagents.graph.conditional_logic import VehicleConditionalLogic
 from vehicleagents.graph.setup import VehicleGraphSetup
 from vehicleagents.graph.signal_processing import VehicleSignalProcessor
 
-DEFAULT_ANALYSTS = ["vin_context", "symptom", "dtc", "knowledge", "experience"]
+DEFAULT_ANALYSTS = ["vin_context", "symptom", "dtc", "knowledge"]
 
 
 class VehicleDiagnosisGraph:

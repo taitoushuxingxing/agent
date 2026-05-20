@@ -13,8 +13,8 @@ DEFAULT_VEHICLE_CONFIG = {
     "backend_url": "https://api.openai.com/v1",
     "max_tool_calls": 2,
     "analyst_max_tool_calls": {
-        "vin_context": 2,
-        "symptom": 1,
+        "vin_context": 3,
+        "symptom": 0,
         "dtc": 4,
         "knowledge": 1,
         "experience": 0,

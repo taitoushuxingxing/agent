@@ -86,9 +86,9 @@ def test_graph_records_tool_flow_and_cleans_messages():
 
     assert state["dtc_tool_call_count"] == 2
     assert any(item["node"] == "tools_dtc" for item in state["graph_trace"])
-    assert state["analyst_conclusions"]["Diagnostic Code Analyst"].startswith("有问题")
+    assert state["analyst_conclusions"]["Diagnostic Code Analyst"].startswith("has_dtc_evidence")
     assert [message.content for message in state["messages"]] == [
-        f"[Diagnostic Code Analyst：{state['analyst_conclusions']['Diagnostic Code Analyst']}]"
+        f"[Diagnostic Code Analyst: {state['analyst_conclusions']['Diagnostic Code Analyst']}]"
     ]
 
 
@@ -134,7 +134,7 @@ def test_graph_uses_llm_tool_call_decision():
 
     assert state["dtc_tool_call_count"] == 1
     assert state["analyst_tool_results"]["dtc"][0]["tool"] == "lookup_dtc_code"
-    assert state["analyst_conclusions"]["Diagnostic Code Analyst"].startswith("有问题")
+    assert state["analyst_conclusions"]["Diagnostic Code Analyst"].startswith("has_dtc_evidence")
 
 
 def test_graph_respects_per_analyst_tool_limit():

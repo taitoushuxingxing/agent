@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from uuid import uuid4
 from typing import Annotated, Any
+from uuid import uuid4
 
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, ToolMessage
 from langchain_core.tools import tool
@@ -29,9 +29,9 @@ def create_msg_delete(node_title: str | None = None):
         removals = [RemoveMessage(id=m.id) for m in messages if hasattr(m, "id")]
         conclusions = state.get("analyst_conclusions") or {}
         if conclusions:
-            content = "\n".join(f"[{analyst}：{conclusion}]" for analyst, conclusion in conclusions.items())
+            content = "\n".join(f"[{analyst}: {conclusion}]" for analyst, conclusion in conclusions.items())
         else:
-            content = "[分析师：暂无结论]"
+            content = "[Analysts: no conclusions yet]"
         updates = append_trace(state, f"Msg Clear {node_title}" if node_title else "Msg Clear")
         updates["messages"] = removals + [HumanMessage(content=content)]
         return updates
@@ -63,9 +63,9 @@ def invoke_llm_tool_decision(
         return None
     prompt = (
         f"You are {analyst_name} in a vehicle fault diagnosis graph. "
-        "Decide whether one of your tools is needed before your final fixed conclusion. "
+        "Decide whether one of your deterministic skills/tools is needed before your report. "
         "If a tool is needed, call the tool. If not, answer with JSON: "
-        '{"need_tool": false, "conclusion": "有问题|无问题", "reason": "..."}.\n'
+        '{"need_tool": false, "conclusion": "has_findings/no_findings", "reason": "..."}.\n'
         f"State context:\n{json.dumps(context, ensure_ascii=False, default=str)}"
     )
     try:
@@ -87,7 +87,7 @@ def conclusion_updates(
     report_key: str,
     report: dict[str, Any],
 ) -> dict[str, Any]:
-    conclusion = report.get("conclusion", "无问题")
+    conclusion = report.get("conclusion", "no_findings")
     reason = report.get("reason", "")
     compact = f"{conclusion}" + (f" - {reason}" if reason else "")
     conclusions = dict(state.get("analyst_conclusions") or {})
@@ -184,7 +184,9 @@ def create_vehicle_tool_node(
                 }
                 tool_errors.append(error)
                 analyst_results.append({"tool": name, "args": args, "ok": False, "error": str(exc)})
-                messages.append(ToolMessage(content=json.dumps({"error": str(exc)}, ensure_ascii=False), tool_call_id=call_id))
+                messages.append(
+                    ToolMessage(content=json.dumps({"error": str(exc)}, ensure_ascii=False), tool_call_id=call_id)
+                )
 
         results_by_analyst[analyst_key] = analyst_results
         detail = f"{len(executable_calls)} tool call(s)"
@@ -217,7 +219,7 @@ def _invoke_tool_with_retries(tool_item: Any, args: dict[str, Any], max_retries:
             future = executor.submit(tool_item.invoke, args)
             try:
                 return future.result(timeout=timeout_seconds)
-            except TimeoutError as exc:
+            except TimeoutError:
                 future.cancel()
                 last_error = TimeoutError(f"tool timed out after {timeout_seconds:g} seconds")
             finally:

@@ -34,6 +34,7 @@ def create_vin_context_analyst(llm=None, toolkit=None):
                         [
                             {"name": "get_vehicle_profile_by_vin", "args": {"vin": vin}},
                             {"name": "get_dtc_history_by_vin", "args": {"vin": vin}},
+                            {"name": "get_maintenance_history_by_vin", "args": {"vin": vin}},
                         ],
                         "VIN Context Analyst",
                     )
@@ -46,13 +47,17 @@ def create_vin_context_analyst(llm=None, toolkit=None):
         maintenance_history = state.get("maintenance_history") or []
         report = {
             "analyst": "VIN Context Analyst",
-            "conclusion": "有问题" if dtc_history else "无问题",
+            "role": "historical_record_collector",
+            "conclusion": "has_history_findings" if dtc_history else "no_history_findings",
             "reason": "存在历史故障码" if dtc_history else ("VIN 缺失，车辆档案不可用" if not vin else "车辆档案未显示历史故障"),
             "vin": vin,
             "vehicle": vehicle,
             "dtc_history_count": len(dtc_history),
             "maintenance_history_count": len(maintenance_history),
+            "dtc_history": dtc_history,
+            "maintenance_history": maintenance_history,
             "data_gaps": [] if vin else ["vin_missing"],
+            "handoff_note": "本报告只提供 VIN 车辆档案、历史故障和维修记录事实。",
             "tool_errors": [item for item in state.get("tool_errors", []) if item.get("analyst") == "vin_context"],
         }
         updates = conclusion_updates(state, "VIN Context Analyst", "vehicle_profile_report", report)

@@ -1,42 +1,42 @@
 # Vehicle Fault Diagnosis Agent 简化设计
 
-当前项目只保留用户指定的 agent 和工具边界：
+当前项目按聊天记录中的分工收敛为 4 个前置 Agent + 1 个最终 Summary Agent：
 
-1. `vin_context`：车辆背景 Agent，根据 VIN 查询车辆档案、历史 DTC、维修/保养记录和里程。
-2. `symptom`：用户主观描述分析 Agent，基于预设 prompt/规则整理故障现象、工况、严重程度和主诉。
-3. `dtc`：DTC Agent，查询故障码含义和故障码组合模式。
-4. `knowledge`：知识库 Agent，查询知识库/案例库。后续可替换为外部 RAG MCP。
-5. `experience`：经验 Agent，查询已确认的历史维修案例；确认结果写入由 API outcome 流程完成。
-6. `Summary Agent`：汇总 Agent，融合前序报告并输出结构化诊断结论。
+1. `vin_context`：历史故障和维修记录 Agent。根据 VIN 通过确定性 Skill 查询车辆档案、历史 DTC、维修/保养记录和里程。
+2. `symptom`：用户主观描述 Agent。只做语义标准化，输出疑似故障点、排查方向和可选联网搜索词，不查询 RAG/案例库。
+3. `dtc`：DTC Agent。根据上游排查方向定向读取/解释故障码、组合模式、冻结帧和数据流事实，只提交客观证据，不做最终交叉验证。
+4. `knowledge`：RAG 知识库 Agent。接收主观假设和 DTC 客观数据，检索车辆手册、技术资料和历史案例，只提供资料参考。
+5. `Summary Agent`：汇总/辩论 Agent。统一融合历史记录、主观假设、DTC 证据和 RAG 参考，完成最终交叉验证、冲突仲裁和诊断输出。
+
+`experience` 仍作为可选兼容 Agent 保留，用于查询已通过 outcome 确认的维修记忆；默认流程不再启用。
 
 ## LangGraph 流程
 
 ```text
 START
   -> VIN Context Analyst -> tools_vin_context? -> Msg Clear VIN Context
-  -> Symptom Analyst -> tools_symptom? -> Msg Clear Symptom
+  -> Symptom Analyst -> Msg Clear Symptom
   -> Diagnostic Code Analyst -> tools_dtc? -> Msg Clear Diagnostic Code
   -> Knowledge Analyst -> tools_knowledge? -> Msg Clear Knowledge
-  -> Experience Analyst -> Msg Clear Experience
   -> Summary Agent
   -> END
 ```
 
-`selected_analysts` 可从以下集合选择：
+默认顺序：
+
+```text
+vin_context -> symptom -> dtc -> knowledge -> summary
+```
+
+支持选择：
 
 ```text
 vin_context, symptom, dtc, knowledge, experience
 ```
 
-默认顺序为：
+## 工具边界
 
-```text
-vin_context -> symptom -> dtc -> knowledge -> experience -> summary
-```
-
-## 工具
-
-保留的工具：
+数据库和底层数据查询都通过 Skill/Tool 封装，LLM 不直接生成 SQL、CAN 指令或数据库查询语句。
 
 - `get_vehicle_profile_by_vin`
 - `get_dtc_history_by_vin`
@@ -45,19 +45,11 @@ vin_context -> symptom -> dtc -> knowledge -> experience -> summary
 - `search_dtc_combinations`
 - `retrieve_repair_cases`
 
-已删除用户未要求的旧复杂链路、传感器/事件工具，以及相关轮次配置项。
+## 输出边界
 
-## 结果
+- Symptom 输出 `semantic_standardization`、`suspected_fault_points`、`inspection_directions`。
+- DTC 输出 `codes`、`lookups`、`combinations`、`freeze_frame` 等客观事实。
+- Knowledge 输出 `repair_references` 和 `knowledge_sources`。
+- Summary 输出 `summary`、`final_conclusion`、`confidence_score`、`confidence_level`、`ranked_hypotheses`、`debate_notes`、`reasoning_process`、`inspection_plan`。
 
-最终结果由 `Summary Agent` 写入 `structured_result`，主要字段包括：
-
-- `summary`
-- `confidence_score`
-- `ranked_hypotheses`
-- `inspection_plan`
-- `analyst_conclusions`
-- `reports`
-- `tool_errors`
-- `diagnostic_trace`
-
-确认维修结果仍通过 `/tasks/{task_id}/outcome` 写入经验库，用于后续 `Experience Analyst` 查询。
+确认维修结果仍通过 `/tasks/{task_id}/outcome` 写入经验库，避免把未确认的诊断推断污染经验数据。

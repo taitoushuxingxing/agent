@@ -39,7 +39,7 @@ class TimeRange(BaseModel):
 
 class DiagnosisParameters(BaseModel):
     selected_analysts: list[str] = Field(
-        default_factory=lambda: ["vin_context", "symptom", "dtc", "knowledge", "experience"]
+        default_factory=lambda: ["vin_context", "symptom", "dtc", "knowledge"]
     )
     diagnosis_depth: str = "standard"
     max_tool_calls: int | None = None

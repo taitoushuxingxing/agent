@@ -1,21 +1,21 @@
 # Vehicle Fault Diagnosis Agent
 
-FastAPI + LangGraph backend for vehicle fault diagnosis. The workflow is intentionally small: vehicle background, user description, DTC, knowledge, experience, and final summary agents.
+FastAPI + LangGraph backend for vehicle fault diagnosis. The default workflow is intentionally small: VIN history, subjective complaint normalization, DTC evidence collection, RAG knowledge retrieval, and final summary/debate.
 
 ## Production-Oriented Features
 
 - FastAPI service with `/health` and OpenAPI docs.
 - LangGraph multi-agent diagnosis workflow.
-- Configurable analysts: `vin_context`, `symptom`, `dtc`, `knowledge`, `experience`.
+- Configurable analysts: `vin_context`, `symptom`, `dtc`, `knowledge`, plus optional `experience`.
 - MongoDB persistence for tasks, results, outcomes, and memory cases.
 - Selectable vehicle data provider mode: `auto`, `mongo`, or `mock`.
 - Redis-backed async task queue with worker concurrency control.
 - Redis-backed request rate limiting.
 - Per-task execution timeout.
 - JSON structured logs and `x-request-id` request tracing.
-- Summary agent supports optional LLM evidence synthesis with deterministic rule fallback.
+- Summary agent performs the final cross-validation/debate with optional LLM evidence synthesis and deterministic rule fallback.
 - OpenAI-compatible LLM client for OpenAI, DeepSeek, Qwen-compatible gateways, and similar `/chat/completions` APIs.
-- Dataflow/tool adapters for VIN, DTC, knowledge cases, and confirmed experience cases.
+- Dataflow/tool adapters for VIN, DTC, RAG knowledge/cases, and confirmed experience cases. Database access is wrapped in deterministic tools rather than LLM-generated SQL.
 
 ## Install
 
@@ -117,7 +117,7 @@ Submit a diagnosis task:
 ```bash
 curl -X POST http://127.0.0.1:8000/api/vehicle-diagnosis/tasks ^
   -H "Content-Type: application/json" ^
-  -d "{\"vin\":\"LFV3A23C0J3000001\",\"symptoms\":[{\"name\":\"rough idle\",\"severity\":\"medium\"}],\"dtc_codes\":[\"P0301\",\"P0171\"],\"parameters\":{\"selected_analysts\":[\"vin_context\",\"symptom\",\"dtc\",\"knowledge\",\"experience\"],\"diagnosis_depth\":\"standard\"}}"
+  -d "{\"vin\":\"LFV3A23C0J3000001\",\"symptoms\":[{\"name\":\"rough idle\",\"severity\":\"medium\"}],\"dtc_codes\":[\"P0301\",\"P0171\"],\"parameters\":{\"selected_analysts\":[\"vin_context\",\"symptom\",\"dtc\",\"knowledge\"],\"diagnosis_depth\":\"standard\"}}"
 ```
 
 Query status:

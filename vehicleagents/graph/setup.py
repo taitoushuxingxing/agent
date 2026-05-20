@@ -20,7 +20,7 @@ from vehicleagents.agents import (
 from vehicleagents.agents.utils.agent_states import VehicleDiagnosisState
 from vehicleagents.graph.conditional_logic import VehicleConditionalLogic
 
-DEFAULT_ANALYSTS = ["vin_context", "symptom", "dtc", "knowledge", "experience"]
+DEFAULT_ANALYSTS = ["vin_context", "symptom", "dtc", "knowledge"]
 
 
 class VehicleGraphSetup:
@@ -108,7 +108,7 @@ class VehicleGraphSetup:
                 self.toolkit.get_dtc_history_by_vin,
                 self.toolkit.get_maintenance_history_by_vin,
             ],
-            "symptom": [self.toolkit.retrieve_repair_cases],
+            "symptom": [],
             "dtc": [self.toolkit.lookup_dtc_code, self.toolkit.search_dtc_combinations],
             "knowledge": [self.toolkit.retrieve_repair_cases],
             "experience": [],
